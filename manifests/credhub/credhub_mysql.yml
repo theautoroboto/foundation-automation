@@ -1,0 +1,526 @@
+
+  
+instance_groups:
+- azs:
+  - Availability Sets
+  instances: 3
+  jobs:
+  - name: mysql
+    properties:
+      cf_mysql:
+        mysql:
+          admin_password: ((db_admin_password))
+          admin_username: admin
+          cluster_health:
+            password: ((cluster_health_password))
+          galera_healthcheck:
+            db_password: ((galera_healthcheck_db_password))
+            endpoint_password: ((galera_healthcheck_endpoint_password))
+          seeded_databases:
+          - name: credhub
+            password: ((credhub_db_password))
+            username: credhub
+          - name: uaa
+            password: ((credhub_uaa_db_password))
+            username: uaa
+          tls:
+            ca_certificate: ((credhub-database-tls.ca))
+            server_certificate: ((credhub-database-tls.certificate))
+            server_key: ((credhub-database-tls.private_key))
+        port: 3306
+    release: cf-mysql
+  - name: smoke-tests-user
+    properties:
+      cf_mysql:
+        smoke_tests:
+          db_password: ((mysql_smoke_tests_db_password))
+    release: cf-mysql
+  name: db
+  networks:
+  - name: bosh-deploy
+  persistent_disk: 10240
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: arbitrator
+    properties:
+      cf_mysql:
+        mysql:
+          admin_password: ((db_admin_password))
+          galera_healthcheck:
+            endpoint_password: ((galera_healthcheck_endpoint_password))
+    release: cf-mysql
+  name: arbitrator
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: proxy
+    properties:
+      cf_mysql:
+        mysql:
+          port: 3306
+        proxy:
+          api_aggregator_port: 8081
+          api_password: ((mysql_proxy_api_password))
+          api_port: 8080
+          api_uri: ((static_ip.credhub_mysql))
+          api_username: proxy
+          port: 3306
+    provides:
+      mysql-database:
+        as: mysql-database
+        shared: true
+    release: cf-mysql
+  name: proxy
+  networks:
+  - name: bosh-deploy
+    static_ips:
+    - ((static_ip.credhub_mysql))
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: bootstrap
+    release: cf-mysql
+  lifecycle: errand
+  name: bootstrap-vm
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: rejoin-unsafe
+    release: cf-mysql
+  lifecycle: errand
+  name: rejoin-unsafe-vm
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: verify-cluster-schemas
+    properties:
+      cf_mysql:
+        mysql:
+          admin_password: ((db_admin_password))
+          galera_healthcheck:
+            endpoint_password: ((galera_healthcheck_endpoint_password))
+    release: cf-mysql
+  lifecycle: errand
+  name: verify-cluster-schemas-vm
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: smoke-tests
+    properties:
+      cf_mysql:
+        mysql:
+          admin_password: ((db_admin_password))
+        proxy:
+          api_password: ((mysql_proxy_api_password))
+        smoke_tests:
+          db_password: ((mysql_smoke_tests_db_password))
+          standalone_tests_only: true
+    release: cf-mysql
+  lifecycle: errand
+  name: smoke-tests-vm
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: bpm
+    release: bpm
+  - consumes:
+      nats:
+        deployment: ((cf.deployment_name))
+        from: nats
+    name: route_registrar
+    properties:
+      route_registrar:
+        routes:
+        - name: credhub
+          registration_interval: 20s
+          server_cert_domain_san: ((credhub.credhub_url))
+          tls_port: 8844
+          uris:
+          - ((credhub.credhub_url))
+        - name: uaa
+          registration_interval: 20s
+          server_cert_domain_san: ((credhub.credhubuaa_url))
+          tls_port: 8443
+          uris:
+          - ((credhub.credhubuaa_url))
+    release: routing
+  - name: uaa
+    properties:
+      bpm:
+        enabled: false
+      encryption:
+        active_key_label: uaa-encryption-key-1
+        encryption_keys:
+        - label: uaa-encryption-key-1
+          passphrase: ((uaa_encryption_password))
+      login:
+        prompt:
+          password:
+            text: Enter password
+          username:
+            text: Enter Username
+        saml:
+          serviceProviderCertificate: ((certs.wildcard.certificate))
+          serviceProviderKey: ((certs.wildcard.private_key))
+          serviceProviderKeyPassword: ""
+      uaa:
+        admin:
+          client_secret: ((credhub_uaa_admin_password))
+        ca_cert: ((certs.wildcard.ca))
+        catalina_opts: -Djava.security.egd=file:/dev/./urandom -Xmx768m -XX:MaxMetaspaceSize=256m
+        clients:
+          concourse_to_credhub:
+            access-token-validity: 1200
+            authorities: credhub.read,credhub.write
+            authorized-grant-types: client_credentials
+            override: true
+            refresh-token-validity: 3600
+            scope: ""
+            secret: ((secrets.concourse.concourse_to_credhub_secret))
+          credhub-admin:
+            access-token-validity: 3600
+            authorities: credhub.read,credhub.write
+            authorized-grant-types: client_credentials
+            override: true
+            scope: ""
+            secret: ((credhub_admin_password))
+          credhub_admin_client:
+            access-token-validity: 3600
+            authorities: credhub.read,credhub.write
+            authorized-grant-types: client_credentials
+            override: true
+            scope: uaa.none
+            secret: ((credhub-admin-client-password))
+          credhub_cli:
+            access-token-validity: 120
+            authorities: uaa.resource
+            authorized-grant-types: password,refresh_token
+            override: true
+            refresh-token-validity: 1800
+            scope: credhub.read,credhub.write
+            secret: ""
+          credhub_ui_admin:
+            access-token-validity: 3600
+            authorities: credhub.read,credhub.write
+            authorized-grant-types: client_credentials
+            override: true
+            scope: uaa.none
+            secret: ((credhubui-admin-password))
+          credhub_webui:
+            access-token-validity: 300
+            app-icon: iVBORw0KGgoAAAANSUhEUgAAAG4AAABuCAYAAADGWyb7AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAB3RJTUUH4gwOCQgJDKODOAAAFgNJREFUeNrtnXl0nNV5xn/3W2bVbkle5F2SF8lC3ohZbBZjG5KSQAnQppTQhpQmTZt0IaG0aXJySlpyspWSQICQQjgYAmFpATveN+x6ky3JkmzLWixbsiRrX0azft/bP2Yk2SAb5xSskTXPOT5HPiNp7nefebfnvvcVJJBAAgkkMN7QffaUbH/lB/L8171yYP2vxNfT/viV+JzqSnmQgd6Oh05W7numdMMTdDXtwXTNJuwvI2v23RSv+Qpzl65SCeLiDPUVe6Ri21rq9/0Mw5uDbqYCNqARCbZhh9rIX/5PFK74Q6bNu1oliBtlnD11TI7seIOa//1ngj5wpS0FO4hIZOjxlGYAJv6uErwZ05m74mEKl3+WjEmzVIK4y4z+7rbXju9bf8+RLU/R27IXR1IBuunCtgYu+Eia7iES6iHiqyF9+iquWv0V8hevXO1OzticIO4y4Nj+DXJ4/RO0n1yH7piE4co5x8qGH0cphYic85OCUiYok0igDivUzbTiL1O8+svMWnCNShD3CeHUsQNSuesNat9/HOWciOHMRqEQCf0ejyEx92kiIoT9R1FWhHkrH6Nw+Z1MmrVAJYj7mNDedEIqd79L9a7vMdDTjTttMUgYlIbSHCCCSBjEQrCj3HCOpSkVJQsNNB2lDBBihIOITqD7MMnZ8ylc+TAF136G5IzJKkHc/yO9P35g4zNHtj5H96mtmMnzMEwPth1AaR7CA3WE+jpRGhgu0Bx5aIYHpXSU0qOEiY2IhdgWdqQPK3QSKxB9akfKLExnBrbtR9PchIOdWP56svLupmjl/RRef4dKEPd7oubQNjm84RlaT7yKMtIw3XkgQUDHtm0CHeVkz72diXNWERzoob/tOAOdZQT7KrFCYIXAtkAzwXCA7gBXytV4MopIzs5H03Uay9fS01SKe8JilBrMQnVCA4dRAtOKv8rCWx9k+tylKkHcR+BMbblU7HiN6p2PoQwPhisXpemAjYgQ7D2C0wOFq3/OvGVryMzJV1G15KT0d7cTHPARiYSxIha2ZaMZGoZhYhgGbm8ySenZJE/IUQBnasqkas9/U73jO9iAw1MMSgANscOE/ZXoOsxf+UPmX3s7E2fMVwniRpCpju79HVXb/g1fx0lcaQtjZFmIHSESPI6yIX/FtylY/nmm5i/62NZdX7FHyjY9z+nS59Fd2ehmBqhoLBRbCHSVkzplIfNv/GvmLbuN1KypKkEccGTXW3Jk63/RduJ/cCTPwXAkYVv+2Oo0JNJHdu5KFt36F8wquv4TWe9Ab8eq6pLNm8o2Pom/twOl1FAGquluwsFuIv21ZM+7h6Kb76fw+s+pcUtcfcUeObzhWZqPvgCA6V0KdmCoHlOaSchXTt6yv+e2h35yWdbZdqpK1j39N/R3lGK6chA7PFz/aU5C/QfRFMxc+g8sXPVFpuQVj9r+GaPxpltffkzWP3Edtg2GuxBNc4AdBKVHP+ligwhKSyXo99PaUCkTZxR+4pvU2XIaKxJG09wQK96jRbsGdgCHdyFih6k78GNOHvgxFbvelAUr7hoV8rTReNOqrd9Gd87H4S2OZe1+IsEzhHxliB1BaQ5Ewpiu6Zwue5rfPfUAJZvWSk/bafkk1tNUfUg2v/SYbHn2VoL9p9HMNEQiKM2JFe4g5CvDCncjdggUOJOvJhyGhiPb8feNzrHRqFicw1uMSCS6EWjYkR4yZ60iKX0Sp8tfIOwHhycP2xrAkXQVvp4Odr/wJ9QUfoH9634ls4uXk5kz5//9Sa8/slPqyvaw4el76WurwZW+ECSIQoHmIth7mLSpq8ieeR/NJ/bi7z2DpjsRO4RmgG46AVU3boiLEgZKcxLylZI+/V5W//kPSJ80Ux3b9zvZ99Z36G7cjyt9EWBhmF6MzKW01bxCW/UrVO1cxbpnvinT5l3NpLwlZOXkXhKJ/d0dqzpb6jY1Hd9LU3UZm5/7c/ydtZjJ+XgmLMG2B9B0TzQZ8dUy8+q/4po//AbZ0+aqYwe3yqYnV+JMXRRz5x9QaMYDccNqlI4dAldKDumTZiqAectuU60NlXJ486vUvv+viD4Bh3cG2EGcyYsRAV/HPupaN1N/EHRzGi9/Z41kTJlLcuYM3MlZmC4vSjOwwkFCA934upvpOVvH64+twd9Xi0S6EQHdmYt7wlJEwlHZDHf0+GdCPks/+zxFN9y52p08YTNASno2pgNEBE1j1GEQhxhMRI7uXSflW56j5ehbmN5J6EYaSnfj8M5FxEasILblo6f1EF1nNiIW0X8ylM2jtGjOo+leND0FTc9EOaajaSYAth1CLD+RwAmUwNwbHqXo5i8wJfcqBQ8OewmRaA4u8bFHo0qciIVmQsh3Fl9P2+Pe1Kx/PPf1+dd8RvV1tnTWV3wxvWr7L+k49R5ig9I0dGcBuulBM7wgGcC0DxzjnF/0qEEW0RHbIhLqwQrWgALD4WH21d+g4Mb7mFnwKQX//uFar6+L0AC4XBoi1jgnzg5heovprH+Zyt23PAL84we/JzljUgaAr6djVXNt6abqgxtob6hgoHMdA2ejpBiedDQjG013RyUyNejLJGqZkTC25cMK1WEFQDfAlT6HtClfYOq8JeQtuZXJs4sUPDGystPWKBuf+zt0T9bQycQ4d5WCwkJz5FH63peoObRF8hbfMmKi4U2dsHlQMOhqbZDmmkO0n2mip72J/rMV+HsqCPYfJxIAiUTdpdJAM8DhBXfaYjxp95OcPY+0rGwmTs9nVvFNCl4BHr7oKve/+zQtx1/HlboQsYMo5UjEOJEIuuklHMhh928epfH4AZk69+INPekTZ5z3envjcfH3dxMY8BEOh7EtiRXwCk3XcbqcuDxJeFMnkJo14/cqI/a8/XMp+e+v4UwpHsqGx32MGwxAYgcx3Vn0tZezY+2/cKbmsEzJu3QhOXPq3E9Evdi/7nk58NsHMT0FKCwkXjKT0VJORiTPCuBImkdX4wa2vvgtGir3jOouvf/Gf8iBNx5Ed89D0/RzOscSxH1oKWIFcXivoqellM3P3Uv5zjcvO3mdLSdl/bMPy+F3/hbdXYimmTHStARxI1mcUgZKRTfJdE8mFHSx81d3seWl70trw9HLQmB1yRZZ/9RD1Oz5EY7khWgKZKg7LL6IM+LC0uwgQV8Vmg6mpxAA3XChJS+kYuM/c6rsZUo2vix5i1aQmjX9Y49njdUlcmzvejY9dQvok3CmLELsIGgmdqSfsK8WpYHDWwhYCeKUMogET5GUdT03PfCftDXWUPbO19FdszCcGYg1gDtjMQFfH7tfuo+aA3/M/nX/JbOvuu5jSUjqyndIbeluNjx9D/1tdbjSF6MIIxJE6R5CfQdxeidzw1++gy0677/4GTRHUaxzbDxbnOYgEujBk5HHvGWfUQBlO34rB9/8Kr7uelyp0cNV3XCiZyzlbO2rtNW8StXOlbz3i4djIvNisqfmX9JO9nW1P9TVUvtM07F9NFYfZvNzf0agq35YZLYGQHcilkaw8yDZc+7i2s8/woyCZart9AlxuCBs2Whx4KhG1+KiNXi0nS6G4hvvVqePH5DSzWup3/tTDO9sDGcq2AFcyYuwBXydJfSf3crJEtCNHNZ+d42kTcojOXMm7uRsTKcXTTeIhAOEBnrwdZ+ht62O179/K4G+40ikPyYy58VE5hBih1C6h2BvCboORZ/+dxavvn+oxyQSDqLpE5CIJFzlOT7zvP9OixXgpdtekyMbf0xn4z4c3uloRjJKd+Bw50WlLDuEbfnobjlEZ9MWxLKGReZBjVINisxJMZF5MsrhRtOMIQHAtoJYoTYsfyfTl3yJBTc/QN7CGxU8OrxETQfCieQkummDInPriCLzwpvvVV2tDXKiZDNHdzxFf0cJYoNmZKM7p6AZXjTDBZKOyFQuLt2raBOQij6yFR7AClbGfh9kz76bolseYtrcRT/44DoAQsEA/t5edI8jLgrxuBGZK95fOaLIPChv9Xa2dDYc2ZVec2gL3c1VDHTsJBwNSeiuWTGLcqKUFjMzYq3mgtgRbCuAHeki4m8GC5wpkDzpdrJnLWDup25nVtFyBb8dcZ3+vs7ZW19+DBswlA0y3pOTIZE5n9J3H+REyWbJXzLyzdGU2CkBQGv9EWk6UUpHawu9rdX42g/h7ykh2AuRINhhsO3oKYBmgOmOEuWecAtJE/+U1OzpZOdMI2fOElKzpim4eNtI6bbf1Nbu/gmutKheqbSEyBwTmT2EA1PY8/q3L0lknjiraOj1/q4z0tvRgt/XT9DvJxKOYFk2IqBpCl3XMB0mLo8HT3Iq2TN+vxs5R3a9LbtevBNHSgFC/MhecSQyZ9PXVsKOtd+hubZMJudeWs9iUvqUT8xvHd27Xna8+GmUORtNN2KnA/HRiR5nInMhXY0b2PLCt2io3D2qGUD5jjdkxwufRpiJbibHFWlxRNwgeVGRubt5L1t+eR+Vu//nspPn62l7/P03n5BdL30e0XLRzdSo/BVnF5viSzkFxA7i8MwkGDDZ9svPsf3VH0nHmdrLQmBj9WHZ+Pwjjxx6+xsYrkJ0wxuXpI1ajIueAoQvWibohgstqZiydx+msfI9yra/IbnF13clpQ9nlx8XOppOyLEDm1j/5DKCvhCutEVDasrFSVPji7hIsBnDPR2xA9F+uhE2YPDyh3vCEnpaq9n5q89zouhL6Yc2r5XZxctJ+xhOCVrrK+RE6Q7W/+Kv6ajbgDNtAY4kI7quCxIj0REcmhc7EkJEZo+aXHi58fJ3Py0dtesxU+ZjmO7ha1UXqvU0E3AQ7C1B0yF58meZnLuQGQuuJ3tGEWnZOZf8HG1NtXKmej+nqvbRfvIA/a270ZxpmJ48xPZf8IM0FFt0D1bYT39zFZ/6wo+44d6H1bghru30Manc8x7Hd/wDgf5oBxaEEdu6qGyldBdiCxF/aVSq0sF0zyUjp5i0yXNJyZqJJyUbw+lB003sSIhQoJ/+zib62uvpaKyip7UcK9yIREBzTMRwTgUiHxHLooNuRHQCXYdJyspl/k0Ps2D5HaRMmDJ+iBtEw9H9UrXrDWp2/wDNmYnpzAElsXtpF9EcNRNQ2FYAsX3YkV7E6sEeqZM5Jk9qOmh6JpqehNK9MfXD+oj3InZzyCbirwPbx5wbv0fB9XeQk7dwVPcuLtKlY/s3SNmGn3G25h1010QMZw5IMNYxrC62q9ExGMS0SRX7+tyOZsUwkxJtRYi6Q7kE92wSCdRgh3uZXHg/i9b8JbOvWp64Snwu+jpb5Oje96ja/iy9rfuiY56Mi495+oAfBTFi8090lNKiRz9io7Cjc00+6oNwThwLBzuJDNSTMWMNRSsfZM7SNbnu5PS6eNmvuCtQzp46Jkd2vkXN7kcJDow0WG3kctQKNaPsTsSGsB+scFRgNhxR2zI8U9HMtGib84iPHYtjGAS6DpGcVUj+dQ+xYMWdH2rATRB3EdSV7ZSKna9xcv/PMDzTMZzpsYEzkQ9ZmhU6w+S5d1F0033YIgT9fmxbUErhdLsZ6G2nctuv6T17AMOR9aFLG4MxMzRQi7L6yb/xuyxYcRdTcovjdn+MeF3Y7OIblL+vc1XtojWbyjb8lM5T2zDc09EdmSCh4Uv+6IjVicPtJm/xzSNudHvjcana7kfEjE0cisUxZYLSiQSbifhbyVnwJyxc8xVyF96g4HvEM8bE0LHejmY5+r/vULHlPxnoqsD0zEc33bH4pxEdKgqZM6/jqpX3kX/OxZEjO9+Q8q2/pq/1AMrIiMW5wTGI3UT8taRMupai1V9nztJVryelZt07FvZkTI37azlZKeVbX6Vu/78S8p8b/yxEbMIDxzCckHftd5mSexW1pds5ffhJRIHpLgKJDBXzga6DuNOymHvDP7FgxZ1jbvDomBw0Wlu2Uyp3vc7JfU9ieKZhOCdELUkzscO9RII10e4xDXRnAZruiCYlyiTkP40E28lb8SgF19/BjIJrxuQejNnxtgO97Y/Xle95pGzjf9Bxciumdza6mRKr16IXGof6T1BYoU7CA6eYPP8eilZ+mXnLbk2M9h1NdLU2yLF966jY8jiB3gZMz3w0ww12EKW5iIS6iPjrSM6+mgW3fI15y/7g9aS0sRHHrmjihuJffYWUbX2V+v2PEQ6B6V1EqPcw7rRcZn/qSxTf/Edk5uRdUSPsxxx6O87Izt88LhXvvy0DfV3nHatUl2yWN3/8ZXn2q8i7v/imNFTtHdK2+rvbXju0aa3seeun4u/vXJXYycuMU1XvyzNfy5Cf3I1s+OU3pb+77bXz5bNmGeli5Lpf/L388HPIi9+aI22Nx2Us74E2Vpft8OTiyiyksfyH+Ho67jn31eSMyWpG4XXnucXusw3S2dKAMwMcnqnRxCVB3GWGRI9+xB7AdBegafpHB3NNwzAd0cF8dmTMe50x/LGTGIehS+vlj7WjXynQxiZl55yUXiIX6grLJw2uMJypq5SqPetQSjGjcCl5C29Sw7WPShA36l7yAm6vpa6cfc9+E0cKhO/41jlhUeJqTsm4JG7YVX5YQtB0g5RcMBxOdGfyFVsSjWFXeaEYp6LXrLTgBa0ykZyMZjmAXEGC3bgpByRmTSNM/lQqQdxYqOM+7CgVkiAubj0ljAt6rkRXeSHilBoXnI5tpXWE7EQlYly8R7eEqxybQe6CNVrC4uK/jhvJVSaIi3fY49ngxjBxF/SUCYsbg6wlYlz8lwHqo78lQdwYWrpKFODxbHAqlj1KIsaNLd7UuCHoCnSVI1tcoo4bE8QlLG7sucoLECfjRMNMWFyCuMtN2gWyykHxWRLExWc5MFSvqZFdZaIAj/OsUo1gcepSfjZB3OjWcXJprlINFu0qdlFkjPdcjpvkpL/7LKGBZuwIJGcvwe1NSRB3+SlTF3SV51vS8NfN9dX0tWxHE8iZfwNJ6ZNUgrhRSE6Glv6BVr1z67hzSTzbcIxAP6TPuJZJM/ISMW40EP3zl4Mkah9wm8NZpdjRU/LmunI5e+JtNA2ycm8lJ3+xShA3CjAMByLRpVuhM+c3Dg1mlTLcqtfZ2kJHXRmedC9T8wsT5cBoIWfO1Spz5jUgDQz09NNQtXeYN9uO8maD7vBGLa56DyKQlL2a6QXXJIgbTSy57UEcrglozlwOv/MATSdKz8vvxQbT6aaj+aScLn8JRxJMylsU++tVCeJGz+ryF6uiNd8n4q8lHHJzcP1zBH2dqzTDgW1Fp8NGAt20N52gt7UWw5lK/tLbEspJPKDg2tuZmH8HIgZNR35O1Z53NkWn5IHhmoevs46Gsg0oAzJn3sL0+ctUgrg4QErmFLX4D/4OXesDbRaVu16hoXwbDm8GSjfpOXuSM8f3YEcg/5o/4kqCNtYfIH/RTWrezY8T9tXj62rh9JHfYLgmI3aY/q5m/H1deJJhSt6SBHHxhsWr/pRJBfcS9pViuKYOjanXdDehvqMUrHqC7GlX1uS8K2LOSWrWVHX29HE5+G42jZXrQXkQO4JpBFnxwK9ZvPqLiXGHCSSQQALjD/8HhAvCbWy/oV4AAAAASUVORK5CYII=
+            app-launch-url: https://((credhub.credhubui_url))
+            authorities: ""
+            authorized-grant-types: authorization_code,refresh_token
+            autoapprove: true
+            override: true
+            redirect-uri: https://((credhub.credhubui_url))/login/callback
+            refresh-token-validity: 1800
+            scope: credhub.read,credhub.write
+            secret: ((credhub-webui-client-password))
+            show-on-homepage: true
+          uaa_admin:
+            authorities: clients.read,clients.write,clients.secret,uaa.admin,scim.read,scim.write,password.write
+            authorized-grant-types: client_credentials
+            override: true
+            scope: ""
+            secret: ((credhub_uaa_admin_password))
+        jwt:
+          policy:
+            active_key_id: uaa-encryption-key-1
+            keys:
+              uaa-encryption-key-1:
+                signingKey: ((uaa-jwt.private_key))
+          revocable: true
+        ldap:
+          emailDomain: []
+          enabled: true
+          groups:
+            autoAdd: true
+            groupRoleAttribute: spring.security.ldap.dn
+            groupSearchFilter: member={0}
+            maxSearchDepth: 10
+            profile_type: groups-map-to-scopes
+            searchBase: ((ldap.ldap_group_search_base_dn))
+            searchSubtree: true
+          mailAttributeName: mail
+          mailSubstitute: ""
+          profile_type: search-and-bind
+          referral: follow
+          searchBase: ((ldap.ldap_user_search_base_dn))
+          searchFilter: userPrincipalName={0}
+          ssl:
+            skipverification: true
+          url: ldap://((ldap.ldap_host))
+          userDN: ((/ldap_user.username))
+          userPassword: ((/ldap_user.password))
+        log_level: debug
+        login:
+          client_secret: ((uaa-login))
+        port: 8443
+        scim:
+          external_groups:
+            ldap:
+              ((ldap.user_dn)):
+              - credhub.write
+              - credhub.read
+              - scim.write
+              - scim.read
+              - clients.read
+              - clients.write
+              - uaa.admin
+          users:
+          - groups:
+            - scim.write
+            - scim.read
+            - credhub.read
+            - credhub.write
+            - uaa.admin
+            - clients.read
+            - clients.write
+            name: admin
+            password: ((uaa-users-admin))
+          - groups:
+            - credhub.read
+            - credhub.write
+            name: credhub_cli_user
+            password: ((credhub-cli-user-password))
+        sslCertificate: ((certs.wildcard.certificate))
+        sslPrivateKey: ((certs.wildcard.private_key))
+        url: https://((credhub.credhubuaa_url))
+        zones:
+          internal:
+            hostnames: []
+      uaadb:
+        address: ((static_ip.credhub_mysql))
+        databases:
+        - name: uaa
+          tag: uaa
+        # db_scheme: mysql
+        db_scheme: postgresql
+        # port: 3306
+        port: 5432
+        roles:
+        - name: uaa
+          password: ((credhub_uaa_db_password))
+          tag: admin
+        tls: disabled
+    release: uaa
+  - name: credhub
+    properties:
+      credhub:
+        authentication:
+          uaa:
+            ca_certs:
+            - ((certs.wildcard.certificate))
+            url: https://((credhub.credhubuaa_url))
+            verification_key: ((uaa-jwt.public_key))
+        authorization:
+          acls:
+            enabled: false
+          permissions:
+          - actors:
+            - uaa-client:credhub_admin_client
+            - uaa-client:concourse_to_credhub
+            operations:
+            - read
+            - write
+            - delete
+            - read_acl
+            - write_acl
+            path: /*
+        ca_certificate: ((certs.wildcard.ca))
+        data_storage:
+          database: credhub
+          host: ((static_ip.credhub_mysql))
+          password: ((credhub_db_password))
+          port: 3306
+          require_tls: true
+          tls_ca: ((credhub-database-tls.ca))
+          type: mysql
+          username: credhub
+        encryption:
+          keys:
+          - active: true
+            key_properties:
+              encryption_password: ((credhub-encryption-password))
+            provider_name: int
+          providers:
+          - name: int
+            type: internal
+        log_level: debug
+        port: 8844
+        tls:
+          ca: ((certs.wildcard.ca))
+          certificate: ((certs.wildcard.certificate))
+          private_key: ((certs.wildcard.private_key))
+    provides:
+      credhub:
+        shared: true
+    release: credhub
+  name: credhub
+  networks:
+  - name: bosh-deploy
+  persistent_disk: 5120
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: bpm
+    release: bpm
+  - consumes:
+      nats:
+        deployment: ((cf.deployment_name))
+        from: nats
+    name: route_registrar
+    properties:
+      nats:
+        deployment: routing
+        from: nats
+      route_registrar:
+        routes:
+        - name: credhubui
+          registration_interval: 20s
+          server_cert_domain_san: ((credhub.credhubui_url))
+          tls_port: 8443
+          uris:
+          - ((credhub.credhubui_url))
+    release: routing
+  - name: credhub-webui
+    properties:
+      client_id: credhub_webui
+      client_secret: ((credhub-webui-client-password))
+      credhub_server: ((credhub.credhub_url))
+      ssl:
+        certificate: ((certs.wildcard.certificate))
+        key: ((certs.wildcard.private_key))
+      ui_url: https://((credhub.credhubui_url))
+    release: credhub-webui
+  name: credhub-webui
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+name: credhub
+releases:
+- name: credhub-webui
+  sha1: 0e05c6c7bd0d50bfa214142b16f3c8e333ec68e2
+  url: https://github.com/shreddedbacon/credhub-webui-boshrelease/releases/download/v0.0.5/credhub-webui-boshrelease-0.0.5.tgz
+  version: 0.0.5
+- name: cf-mysql
+  version: latest
+- name: routing
+  version: latest
+- name: uaa
+  version: latest
+- name: backup-and-restore-sdk
+  version: latest
+- name: os-conf
+  version: latest
+- name: credhub
+  version: latest
+- name: bpm
+  version: latest
+stemcells:
+- alias: xenial
+  os: ubuntu-xenial
+  version: latest
+update:
+  canaries: 1
+  canary_watch_time: 10000-300000
+  max_in_flight: 1
+  serial: true
+  update_watch_time: 10000-300000
+variables:
+- name: MySQL-ca
+  options:
+    common_name: MySQL CA
+    is_ca: true
+  type: certificate
+- name: credhub-database-tls
+  options:
+    alternative_names:
+    - ((static_ip.credhub_mysql))
+    - localhost
+    - 127.0.0.1
+    ca: MySQL-ca
+    common_name: ((static_ip.credhub_mysql))
+  type: certificate
+- name: uaa-jwt
+  options:
+    key_length: 4096
+  type: rsa
+- name: uaa-users-admin
+  type: password
+- name: credhub_uaa_admin_password
+  type: password
+- name: uaa-login
+  type: password
+- name: uaa_encryption_password
+  type: password
+- name: credhub-encryption-password
+  options:
+    length: 40
+  type: password
+- name: credhub-admin-client-password
+  type: password
+- name: credhub_admin_password
+  type: password
+- name: mysql_smoke_tests_db_password
+  type: password
+- name: mysql_proxy_api_password
+  type: password
+- name: galera_healthcheck_endpoint_password
+  type: password
+- name: galera_healthcheck_db_password
+  type: password
+- name: cluster_health_password
+  type: password
+- name: db_admin_password
+  type: password
+- name: credhubui-admin-password
+  type: password
+- name: credhub_db_password
+  type: password
+- name: credhub_uaa_db_password
+  type: password
+- name: credhub-webui-client-password
+  type: password
+- name: credhub-cli-user-password
+  type: password
+- name: /concourse/concourse_to_credhub_secret
+  type: password
