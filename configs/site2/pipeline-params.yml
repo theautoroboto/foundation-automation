@@ -1,0 +1,59 @@
+foundation:
+  version: 2.6
+  name: xyz
+  iaas: &foundation_iaas vsphere
+  system_domain: sys.xyz.com
+  apps_domain: apps.xyz.com
+
+pivnet:
+  api_token: &pivnet_token ((pivnet_token))
+
+secrets:
+  sre:
+    metricscollector_user: ((metrics_collector.username))
+    metricscollector_password: ((metrics_collector.password))
+  ldap_user:
+    username: ((/ldap_user.username))
+    password: ((/ldap_user.password))
+  concourse:
+    concourse_to_credhub_secret: ((/concourse/concourse_to_credhub_secret))
+    admin_user: concourse
+    admin_password: shhitsasecret
+
+static_ip:
+  credhub_mysql: 1.1.1.1
+
+cf:
+  deployment_name: cf-blahblah
+
+ldap:
+  user_dn: CN=ThisUser,OU=anOrg,DC=domain,DC=net
+  ldap_group_search_base_dn: OU=Groups,DC=domain,DC=net
+  ldap_host: ldapserver.domainv.net
+  ldap_user_search_base_dn: OU=Users,DC=domain,DC=net
+  group_name: PAE_PCF
+  group_dn: CN=SomeGroup,OU=Groups,DC=domain,DC=net
+
+credhub:
+  credhub_url: credhub.sys.xyz.com
+  credhubui_url: credhubui.sys.xyz.com
+  credhubuaa_url: credhub-uaa.sys.xyz.com
+
+concourse:
+  concourse_url: concourse.sys.xyz.com
+  credhub_url: credhub.sys.xyz.com
+  credhubui_url: credhubui.sys.xyz.com
+  credhubuaa_url: credhub-uaa.sys.xyz.com
+  db_static_ip: 1.1.1.1
+
+certs:
+  wildcard:
+    ca: |
+      -----BEGIN CERTIFICATE-----
+      -----END CERTIFICATE-----
+    certificate: |
+      -----BEGIN CERTIFICATE-----
+      -----END CERTIFICATE-----
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      -----END RSA PRIVATE KEY-----
