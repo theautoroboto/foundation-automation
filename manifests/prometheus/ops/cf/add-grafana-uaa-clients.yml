@@ -1,0 +1,19 @@
+# Apply to your cf-deployment based Cloud Foundry
+# bosh -e fog -d cf-c1b937645f85ca7b8df7 deploy /tmp/fog-cf -o ./pcf-tile-configurator/bosh-deployments/prometheus/ops/cf/add-grafana-uaa-clients.yml  -o ./pcf-tile-configurator/bosh-deployments/prometheus/ops/cf/add-prometheus-uaa-clients.yml -l ./pcf-swiss-army/master-params/fog-params.yml --no-redact
+
+# UAA client for grafana
+- type: replace
+  path: /instance_groups/name=uaa/jobs/name=uaa/properties/uaa/clients/grafana?
+  value:
+    override: true
+    authorized-grant-types: authorization_code
+    authorities: uaa.none
+    scope: openid
+    secret: "((/uaa_clients_grafana_secret))"
+    redirect-uri: https://grafana.((system_domain))/login #"((grafana_redirect_uri))"
+
+- type: replace
+  path: /variables/-
+  value:
+    name: /uaa_clients_grafana_secret
+    type: password

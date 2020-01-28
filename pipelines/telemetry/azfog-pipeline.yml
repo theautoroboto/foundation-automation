@@ -1,0 +1,80 @@
+---
+azure_credentials: &azure_credentials
+  container: bbr
+  storage_account_name: ((azstorage.user))
+  storage_account_key: ((azstorage.password))
+
+resource_types:
+- name: azure-blobstore
+  type: docker-image
+  source:
+    repository: ((docker_registry))/pcf-admins/azure-blobstore-resource
+    tag: latest
+    username: ((secrets.concourse.harbor_username))
+    password: ((secrets.concourse.harbor_password))
+
+resources:
+- name: pipeline-repo
+  type: git
+  source:
+    uri: ((pipelines.swiss_army_git))
+    username: ((secrets.concourse.git_username))
+    password: ((secrets.concourse.git_password))
+    skip_ssl_verification: true
+
+- name: pipeline_image
+  type: docker-image
+  source:
+    repository: ((pipelines.docker_registry))/pcf-admins/clitools
+    insecure_registries: [ ((pipelines.docker_registry)) ]
+
+
+- name: binary
+  type: azure-blobstore
+  source:
+    <<: *azure_credentials
+    regexp: bbr-(.*).tar
+
+- name: schedule
+  type: time
+  source:
+    interval: 168h # 1 week
+
+
+jobs:
+- name: telemetry
+  plan:
+  - get: schedule
+    trigger: true
+  - get: binary
+  - get: pipeline-repo
+  - get: pipeline_image
+  - task: collect
+    image: pipeline_image
+    file: pipeline-repo/tasks/telemetry/collect.yml
+    params: 
+      OPS_MANAGER_USERNAME:
+      OPS_MANAGER_PASSWORD:
+      WITH_CREDHUB_INFO: true
+      CF_API_URL: https://((foundation.cf_api))
+      USAGE_SERVICE_URL: https://((foundation.usage_service))
+      #Retreive from Usage Service Client Credentials in PAS Tile Credentials tab
+      USAGE_SERVICE_CLIENT_ID: ((secrets.concourse.usage_service_id))
+      USAGE_SERVICE_CLIENT_SECRET: ((secrets.concourse.usage_service_password))
+      USAGE_SERVICE_INSECURE_SKIP_TLS_VERIFY: true
+      OPS_MANAGER_URL: https://((foundation.opsman_url))
+      OPS_MANAGER_CLIENT_ID: ((secrets.opsman.client_id))
+      OPS_MANAGER_CLIENT_SECRET: ((secrets.opsman.client_secret))
+      ENV_TYPE: ((pipelines.telemetry.env_type))
+      INSECURE_SKIP_TLS_VERIFY: true
+      OPS_MANAGER_TIMEOUT: 360
+  - task: send
+    image: pipeline_image
+    file: pipeline-repo/tasks/telemetry/send.yml
+    params:
+      API_KEY: ((telemetry_api_key))
+      PROXY_SERVER: ((foundation.proxy_server))
+      ENV: ((foundation.name))
+      ECS: ((ecs.endpoint))
+      ECS_ACCESSKEY: ((ecs.accesskey))
+      ECS_SECRETKEY: ((ecs.secretkey))

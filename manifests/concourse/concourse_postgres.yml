@@ -1,0 +1,158 @@
+instance_groups:
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: bpm
+    release: bpm
+  - consumes:
+      nats:
+        deployment: ((cf.deployment_name))
+        from: nats
+    name: route_registrar
+    properties:
+      route_registrar:
+        routes:
+        - name: concourse
+          port: 8080
+          registration_interval: 20s
+          uris:
+          - ((concourse.concourse_url))
+    release: routing
+  - name: web
+    properties:
+      add_local_users:
+      - ((secrets.concourse.admin_user)):((secrets.concourse.admin_password))
+      auth_duration: 24h
+      bind_port: 8080
+      build_log_retention:
+        default: 0
+      credhub:
+        client_id: concourse_to_credhub
+        client_secret: ((/concourse/concourse_to_credhub_secret))
+        tls:
+          ca_certs:
+          - |
+            ((/certs/wildcard.ca))
+            ((/certs/wildcard.certificate))
+          insecure_skip_verify: true
+        url: https://((concourse.credhub_url))
+      external_url: https://((concourse.concourse_url))
+      ldap_auth:
+        bind_dn: ((secrets.ldap_user.username))
+        bind_pw: ((secrets.ldap_user.password))
+        group_search_base_dn: ((ldap.ldap_group_search_base_dn))
+        group_search_group_attr: member
+        group_search_name_attr: cn
+        group_search_scope: sub
+        group_search_user_attr: distinguishedName
+        host: ((ldap.ldap_host)):389
+        insecure_no_ssl: true
+        start_tls: false
+        user_search_base_dn: ((ldap.ldap_user_search_base_dn))
+        user_search_email_attr: mail
+        user_search_id_attr: userPrincipalName
+        user_search_name_attr: name
+        user_search_scope: sub
+        user_search_username: userPrincipalName
+      log_level: debug
+      main_team:
+        auth:
+          allow_all_users: false
+          ldap:
+            groups:
+            - ((ldap.group_name))
+          local:
+            users:
+            - ((secrets.concourse.admin_user))
+      postgresql:
+        database: atc
+        role:
+          name: concourse
+          password: ((postgres_password))
+        sslmode: disable
+      prometheus:
+        bind_ip: 0.0.0.0
+        bind_port: 9391
+      token_signing_key: ((token_signing_key))
+      worker_gateway:
+        authorized_keys:
+        - ((worker_key.public_key))
+        host_key: ((tsa_host_key))
+        log_level: debug
+    release: concourse
+  name: concourse
+  networks:
+  - name: bosh-deploy
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 1
+  jobs:
+  - name: postgres
+    properties:
+      databases:
+        databases:
+        - name: atc
+        port: 5432
+        roles:
+        - name: concourse
+          password: ((postgres_password))
+  name: db
+  networks:
+  - name: bosh-deploy
+  persistent_disk_type: 102400
+  release: postgres
+  stemcell: xenial
+  vm_type: Standard_F1s
+- azs:
+  - Availability Sets
+  instances: 3
+  jobs:
+  - name: worker
+    properties:
+      connection_drain_timeout: 10m
+      drain_timeout: 10m
+      log_level: debug
+      worker_gateway:
+        worker_key: ((worker_key))
+  name: worker
+  networks:
+  - name: bosh-deploy
+  release: concourse
+  stemcell: xenial
+  vm_type: Standard_F4s
+name: concourse
+releases:
+- name: concourse
+  version: latest
+- name: postgres
+  version: latest
+- name: bpm
+  version: latest
+- name: routing
+  version: latest
+stemcells:
+- alias: xenial
+  os: ubuntu-xenial
+  version: latest
+update:
+  canaries: 1
+  canary_watch_time: 1000-60000
+  max_in_flight: 3
+  serial: false
+  update_watch_time: 1000-60000
+variables:
+- name: postgres_password
+  type: password
+- name: token_signing_key
+  type: rsa
+- name: tsa_host_key
+  type: ssh
+- name: worker_key
+  type: ssh
+- name: concourse_user
+  options:
+    username: concourse
+  type: user

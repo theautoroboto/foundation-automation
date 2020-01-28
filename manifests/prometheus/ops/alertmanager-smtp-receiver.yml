@@ -1,0 +1,25 @@
+- type: replace
+  path: /instance_groups/name=alertmanager/jobs/name=alertmanager/properties/alertmanager/receivers/name=default/email_configs?/-
+  value:
+    from: ((email-from))
+    to: ((email-to))
+    require_tls: false
+    smarthost: "((smtp_host)):25"
+
+- type: replace
+  path: /instance_groups/name=grafana/jobs/name=grafana/properties/grafana/smtp?
+  value:
+    cert_file:
+    enabled: true
+    from_address: ((email-from))
+    from_name: Grafana
+    host: "((smtp_host)):25"
+    key_file:
+    password:
+    skip_verify: true
+    user:
+
+- type: replace
+  path: /instance_groups/name=grafana/jobs/name=grafana/properties/grafana/alerting?
+  value:
+    enabled: true

@@ -4,6 +4,7 @@ foundation:
   iaas: &foundation_iaas vsphere
   system_domain: sys.xyz.com
   apps_domain: apps.xyz.com
+  azs: ["abc", "123"]
 
 pivnet:
   api_token: &pivnet_token ((pivnet_token))

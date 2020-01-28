@@ -1,0 +1,45 @@
+- type: replace
+  path: /instance_groups/name=alertmanager/jobs/name=alertmanager/properties/alertmanager/receivers/-
+  value:
+    name: "blackhole"
+
+- type: replace
+  path: /instance_groups/name=alertmanager/jobs/name=alertmanager/properties/alertmanager/route/routes?
+  value:
+    - match:
+        alertname: BOSHJobEphemeralDiskPredictWillFill
+        bosh_deployment: concourse-workers
+      receiver: blackhole
+    - match:
+        alertname: BOSHJobEphemeralDiskPredictWillFill
+        bosh_deployment: concourse
+      receiver: blackhole
+    - match:
+        alertname: BOSHJobEphemeralDiskPredictWillFill
+        bosh_job_name: mysql
+      receiver: blackhole
+    - match:
+        alertname: BOSHJobEphemeralDiskFull
+        bosh_deployment: concourse
+      receiver: blackhole
+    - match:
+        severity: warning
+        bosh_deployment: concourse
+      receiver: blackhole
+    - match:
+        severity: warning
+        bosh_deployment: concourse-workers
+      receiver: blackhole
+    - match:
+        alertname: CFAppCrashed
+      receiver: blackhole
+    - match:
+        alertname: CFAppUnhealthy
+      receiver: blackhole
+    - match:
+        alertname: BOSHJobEphemeralDiskPredictWillFill
+        bosh_job_name: run-smoke-tests
+      receiver: blackhole
+    - match:
+        alertname: MySQLdExporterScrapeError
+      receiver: blackhole

@@ -1,0 +1,6 @@
+# Allow anonymous
+- type: replace
+  path: /instance_groups/name=grafana/jobs/name=grafana/properties/grafana/auth/anonymous?
+  value:
+      enabled: true
+      org_role: Viewer

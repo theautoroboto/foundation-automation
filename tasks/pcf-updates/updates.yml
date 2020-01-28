@@ -1,0 +1,17 @@
+---
+platform: linux
+inputs:
+- name: pipeline_repo
+params:
+  PRODUCT:
+  OM_CLIENT_SECRET:
+  OM_CLIENT_ID:
+  opsman_url:
+  pivnet_token:
+
+image_resource:
+  type: docker-image
+  source:
+    repository: hashicorp/terraform
+run:
+  path: pipeline_repo/tasks/pcf-updates/updates.sh

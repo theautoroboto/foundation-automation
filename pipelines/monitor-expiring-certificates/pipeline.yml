@@ -1,0 +1,128 @@
+---
+#
+# PCF Documentation: https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html
+#
+resources:
+- name: time-trigger
+  type: time
+  source:
+    interval: 168h
+
+- name: send-an-email
+  type: email
+  source:
+    smtp:
+      host: ((pipelines.smtp_host))
+      port: "25"
+      skip_ssl_validation: true
+      anonymous: true
+    from: ((pipelines.email-from))
+    to: [ ((pipelines.email-to)) ]
+
+- name: pcf-pipelines-utils
+  type: git
+  source:
+    uri: ((pipelines.swiss_army_git))
+    username: ((secrets.concourse.git_username))
+    password: ((secrets.concourse.git_password))
+    skip_ssl_verification: true
+
+- name: pipeline_image
+  type: docker-image
+  source:
+    insecure_registries:
+    - ((pipelines.docker_registry))
+    repository: ((pipelines.docker_registry))/pcf-admins/clitools
+
+resource_types:
+- name: email
+  type: docker-image
+  source:
+    insecure_registries:
+    - ((pipelines.docker_registry))
+    repository: ((pipelines.docker_registry))/pcf-admins/email-resource
+    tag: latest
+
+jobs:
+- name: Monitor-Expiring-Certificates
+  plan:
+  - get: time-trigger
+    trigger: true
+  - get: pcf-pipelines-utils
+  - get: pipeline_image
+  - task: check-expiring-certificates
+    image: pipeline_image
+    file: pcf-pipelines-utils/tasks/certificates/check-expiring-certificates/task.yml
+    params:
+      OPSMAN_DOMAIN_OR_IP_ADDRESS: ((pipelines.opsman_url))
+      OPSMAN_USERNAME: ""
+      OPSMAN_PASSWORD: ""
+      OPSMAN_CLIENT_ID: ((secrets.opsman.client_id))
+      OPSMAN_CLIENT_SECRET: ((secrets.opsman.client_secret))
+      EXPIRATION_TIME_FRAME: 3m    # e.g. 10d, 2m, 3w, 1y
+  - task: notify-of-expiring-certificates
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          insecure_registries:
+          - ((pipelines.docker_registry))
+          repository: ((pipelines.docker_registry))/pcf-admins/clitools #((certificate_monitor_repo))
+          # username: ((secrets.concourse.harbor_username))
+          # password: ((secrets.concourse.harbor_password))
+
+      inputs:
+      - name: expiring_certs
+      run:
+        path: bash
+        args:
+        - -ec
+        - |
+          number_of_exp_conf_certs=$(cat ./expiring_certs/expiring_configurable_certs.json | jq -r '. | length')
+          number_of_exp_non_conf_certs=$(cat ./expiring_certs/expiring_non_configurable_certs.json | jq -r '. | length')
+          number_of_exp_ca_certs=$(cat ./expiring_certs/expiring_ca_certs.json | jq -r '. | length')
+          number_of_exp_dir_trusted_cert=0
+          if [[ -s ./expiring_certs/expiring_director_trusted_certs.pem ]]; then
+            number_of_exp_dir_trusted_cert=1
+          fi
+          number_of_exp_root_cert=0
+          if [[ -s ./expiring_certs/expiring_root_cert.pem ]]; then
+            number_of_exp_root_cert=1
+          fi
+          # Configurable certs
+          if [[ ${number_of_exp_conf_certs} > 0 ]]; then
+             echo "Configurable certificate(s) expiring. See PCF documentation for more information on how to rotate them:"
+             echo "https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html#rotate-config"
+          fi
+          # Non-Configurable certs
+          if [[ ${number_of_exp_non_conf_certs} > 0 ]]; then
+             echo "Non-Configurable certificate(s) expiring. See PCF documentation for more information on how to rotate them:"
+             echo "https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html#rotate-non-config"
+          fi
+          # CA certs
+          if [[ ${number_of_exp_ca_certs} > 0 ]]; then
+             echo "CA certificate(s) expiring. See PCF documentation for more information on how to rotate them:"
+             echo "https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html#rotate-ca"
+          fi
+          # Director Trusted certs
+          if [[ ${number_of_exp_dir_trusted_cert} > 0 ]]; then
+             echo "Director Trusted certificate(s) expiring. See PCF documentation for more information on how to rotate them:"
+             echo "https://docs.pivotal.io/pivotalcf/customizing/trusted-certificates.html"
+          fi
+          # Ops Mgr root certs
+          if [[ ${number_of_exp_root_cert} > 0 ]]; then
+             echo "Ops Mgr root certificate expiring. See PCF documentation for more information on how to rotate it:"
+             echo "https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html#rotate-root"
+          fi
+          total_number_of_exp_certs=$(($number_of_exp_conf_certs+$number_of_exp_non_conf_certs+$number_of_exp_ca_certs+$number_of_exp_root_cert+$number_of_exp_dir_trusted_cert))
+          if (( ${total_number_of_exp_certs} > 0 )); then
+             exit 1
+          else
+             echo "No expiring certificates found."
+          fi
+    on_failure:
+      put: send-an-email
+      params:
+        subject_text: "Action required - PCF certificates are about to expire."
+        body_text: "PCF certificates are about to expire, see list from ${ATC_EXTERNAL_URL}/teams/((foundation.name))/pipelines/${BUILD_PIPELINE_NAME}/jobs/${BUILD_JOB_NAME}/builds/${BUILD_NAME}. For more information: https://docs.pivotal.io/pivotalcf/security/pcf-infrastructure/api-cert-rotation.html"

@@ -1,0 +1,59 @@
+resources:
+- name: schedule
+  type: time
+  source:
+    start: 5:00 AM
+    stop: 7:00 AM
+    location: America/New_York
+    interval: 24h
+
+- name: pipeline-repo
+  type: git
+  source:
+    uri: ((pipelines.swiss_army_git))
+    username: ((secrets.concourse.git_username))
+    password: ((secrets.concourse.git_password))
+    skip_ssl_verification: true
+
+- name: pipeline_image
+  type: docker-image
+  source:
+    repository: ((pipelines.docker_registry))/pcf-admins/clitools
+    insecure_registries: [ ((pipelines.docker_registry)) ]
+
+resource_types:
+- name: email
+  type: docker-image
+  source:
+    insecure_registries:
+    - ((pipelines.docker_registry))
+    repository: ((pipelines.docker_registry))/pcf-admins/email-resource
+
+jobs:
+- name: usage-report
+  plan:
+  - get: schedule
+    trigger: true
+  - get: pipeline-repo
+  - get: pipeline_image
+  - task: run-report
+    image: pipeline_image
+    file: pipeline-repo/tasks/usage-report/task.yml
+    params:
+      REPORT_ENV: ((REPORT_ENV))
+      SMTP_SERVER: ((smtp_host))
+      CF_USER: ((usage_cf_user))
+      CF_PASS: ((usage_cf_pass))
+
+- name: usage-report-manual
+  plan:
+  - get: pipeline-repo
+  - get: pipeline_image
+  - task: run-report
+    image: pipeline_image
+    file: pipeline-repo/tasks/usage-report/task-manual.yml
+    params:
+      REPORT_ENV: ((REPORT_ENV))
+      SMTP_SERVER: ((smtp_host))
+      CF_USER: ((usage_cf_user))
+      CF_PASS: ((usage_cf_pass))

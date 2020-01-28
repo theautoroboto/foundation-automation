@@ -1,0 +1,317 @@
+resources:
+- name: time-trigger-45m
+  type: time
+  source:
+    interval: 45m
+- name: time-trigger-1h
+  type: time
+  source:
+    interval: 1h
+- name: pipeline_image
+  type: docker-image
+  source:
+    insecure_registries:
+    - ((pipelines.docker_registry))
+    repository: ((pipelines.docker_registry))/pcf-admins/clitools
+
+jobs:
+- name: ecs_sli
+  plan:
+  - get: time-trigger-45m
+    trigger: true
+  - get: pipeline_image
+  - task: ecs-checks
+    image: pipeline_image
+    params:
+      metrics_collector_user: ((metrics_collector.username))
+      metrics_collector_password: ((metrics_collector.password))
+      api: api.((foundation.system_domain))
+    config:
+      platform: linux
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+          set -eu
+          cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+          cf create-service ecs-bucket 5gb ecs_test
+          cf create-service-key ecs_test ecs_key
+          cf service-key ecs_test ecs_key | sed 1,2d > service_key.json
+          ACCESSKEY=$(bosh int service_key.json --path=/accessKey)
+          BUCKET=$(bosh int service_key.json --path=/bucket)
+          ENDPOINT=$(bosh int service_key.json --path=/endpoint)
+          S3URL=$(bosh int service_key.json --path=/s3Url)
+          SECRETKEY=$(bosh int service_key.json --path=/secretKey)
+          mc config host add ecs_test $ENDPOINT $ACCESSKEY $SECRETKEY
+          mc ls ecs_test/$BUCKET
+          #TEST SOMETHING HERE?
+          cf delete-service-key ecs_test ecs_key -f
+          cf delete-service ecs_test -f
+    on_failure:
+      task: ecs-failure
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/ecs_metric?success=0"
+    on_success:
+      task: ecs-success
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/ecs_metric?success=1"
+- name: rabbit_ondmd_sli
+  plan:
+  - get: time-trigger-1h
+    trigger: true
+  - get: pipeline_image
+  - task: rabbit-ondmd-checks
+    image: pipeline_image
+    params:
+      metrics_collector_user: ((metrics_collector.username))
+      metrics_collector_password: ((metrics_collector.password))
+      api: api.((foundation.system_domain))
+    config:
+      platform: linux
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+            set -eu
+            cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+            cf create-service p.rabbitmq single-node-3.7 rabbitmq-ondmd
+            while cf service rabbitmq-ondmd | grep "create in progress";
+            do
+              echo "sleeping"
+              sleep 300
+            done
+            # cf bind-service rabbitmq-sender-ondmdplan rabbitmq-ondmd
+            cf delete-service rabbitmq-ondmd -f
+    on_failure:
+      task: rabbit-failure
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/rabbitmq_ondmd_svc_creation_availability?success=0"
+    on_success:
+      task: rabbit-success
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/rabbitmq_ondmd_svc_creation_availability?success=1"
+
+- name: rabbit_sli
+  plan:
+  - get: time-trigger-45m
+    trigger: true
+  - get: pipeline_image
+  - task: rabbit-checks
+    image: pipeline_image
+    params:
+      metrics_collector_user: ((metrics_collector.username))
+      metrics_collector_password: ((metrics_collector.password))
+      api: api.((foundation.system_domain))
+    config:
+      platform: linux
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+            set -eu
+            cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+            cf create-service p-rabbitmq standard rabbitmq-std
+            cf delete-service rabbitmq-std -f
+    on_failure:
+      task: rabbit-failure
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/rabbitmq_shared_svc_creation_availability?success=0"
+    on_success:
+      task: rabbit-success
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/rabbitmq_shared_svc_creation_availability?success=1"
+
+
+- name: credhub_sli
+  plan:
+  - get: time-trigger-45m
+    trigger: true
+  - get: pipeline_image
+  - task: credhub-checks
+    image: pipeline_image
+    params:
+      metrics_collector_user: ((metrics_collector.username))
+      metrics_collector_password: ((metrics_collector.password))
+      api: api.((foundation.system_domain))
+    config:
+      platform: linux
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+            set -eu
+            cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+            cf create-service credhub default credhubmetrictest -c '{"MYCRED":"QWew232rtsddR"}'
+            cf delete-service credhubmetrictest -f
+    on_failure:
+      task: credhub-failure
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/credhub_svc_creation_availability?success=0"
+    on_success:
+      task: credhub-success
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/credhub_svc_creation_availability?success=1"
+
+- name: scs3_sli
+  plan:
+  - get: time-trigger-45m
+    trigger: true
+  - get: pipeline_image
+  - task: scs3-checks
+    image: pipeline_image
+    params:
+      metrics_collector_user: ((metrics_collector.username))
+      metrics_collector_password: ((metrics_collector.password))
+      api: api.((foundation.system_domain))
+    config:
+      platform: linux
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+            set -eu
+            cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+            cf create-service p.config-server standard configservertest
+            # cf create-service p.service-registry standard serviceregtest
+            sleep 300
+            cf delete-service configservertest -f
+            # cf delete-service serviceregtest -f
+    on_failure:
+      task: scs3-failure
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/scs3_creation_availability?success=0"
+    on_success:
+      task: scs3-success
+      image: pipeline_image
+      params:
+        apps_domain: ((foundation.apps_domain))
+      config:
+        platform: linux
+        run:
+          path: bash
+          args:
+          - "-c"
+          - "curl -k https://metricscollector.${apps_domain}/scs3_creation_availability?success=1"
+# - name: p-redis_sli
+#   plan:
+#   - get: time-trigger-45m
+#     trigger: true
+#   - get: pipeline_image
+#   - task: credhub-checks
+#     image: pipeline_image
+#     params:
+#       metrics_collector_user: ((metrics_collector.username))
+#       metrics_collector_password: ((metrics_collector.password))
+#       api: api.((foundation.system_domain))
+#     config:
+#       platform: linux
+#       run:
+#         path: bash
+#         args:
+#         - -c
+#         - |
+#             set -eu
+#             cf login --skip-ssl-validation -a $api -o system -s pcf-admins -u $metrics_collector_user -p $metrics_collector_password
+#             cf create-service p-redis shared-vm redistest
+#             cf delete-service redistest -f
+#     on_failure:
+#       task: p-redis-failure
+#       image: pipeline_image
+#       params:
+#         apps_domain: ((foundation.apps_domain))
+#       config:
+#         platform: linux
+#         run:
+#           path: bash
+#           args:
+#           - "-c"
+#           - "curl -k https://metricscollector.${apps_domain}/redis_creation_availability?success=0"
+#     on_success:
+#       task: p-redis-success
+#       image: pipeline_image
+#       params:
+#         apps_domain: ((foundation.apps_domain))
+#       config:
+#         platform: linux
+#         run:
+#           path: bash
+#           args:
+#           - "-c"
+#           - "curl -k https://metricscollector.${apps_domain}/redis_creation_availability?success=1"

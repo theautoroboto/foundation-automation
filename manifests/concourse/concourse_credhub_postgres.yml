@@ -1,18 +1,3 @@
-# addons:
-# - jobs:
-#   - name: bosh-dns-aliases
-#     properties:
-#       aliases:
-#       - domain: db.service.cf.internal
-#         targets:
-#         - deployment: concourse
-#           domain: bosh
-#           instance_group: db
-#           network: bosh-deploy
-#           query: '*'
-#     release: bosh-dns-aliases
-#   name: bosh-dns-aliases
-
 instance_groups:
 - azs:
   - Availability Sets
@@ -296,7 +281,7 @@ instance_groups:
       ldap_auth:
         bind_dn: ((secrets.ldap_user.username))
         bind_pw: ((secrets.ldap_user.password))
-        group_search_base_dn: ((/ldap_group_search_base_dn))
+        group_search_base_dn: ((ldap.ldap_group_search_base_dn))
         group_search_group_attr: member
         group_search_name_attr: cn
         group_search_scope: sub
@@ -452,8 +437,6 @@ releases:
   sha1: 0e05c6c7bd0d50bfa214142b16f3c8e333ec68e2
   url: https://github.com/shreddedbacon/credhub-webui-boshrelease/releases/download/v0.0.5/credhub-webui-boshrelease-0.0.5.tgz
   version: 0.0.5
-# - name: bosh-dns-aliases
-#   version: 0.0.3
 stemcells:
 - alias: xenial
   os: ubuntu-xenial
