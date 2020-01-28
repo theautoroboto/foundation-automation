@@ -45,7 +45,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site1_opsman_url))
       CLIENT_ID: ((site1_opsman_admin.username))
       CLIENT_SECRET: ((site1_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 
 - name: gather-data-site2
@@ -71,7 +72,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site2_opsman_url))
       CLIENT_ID: ((site2_opsman_admin.username))
       CLIENT_SECRET: ((site2_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 
 - name: gather-data-site3
@@ -97,7 +99,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site3_opsman_url))
       CLIENT_ID: ((site3_opsman_admin.username))
       CLIENT_SECRET: ((site3_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 - name: gather-data-site4
   plan:
@@ -122,7 +125,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site4_opsman_url))
       CLIENT_ID: ((site4_opsman_admin.username))
       CLIENT_SECRET: ((site4_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 
 - name: gather-data-site6
@@ -148,7 +152,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site6_opsman_url))
       CLIENT_ID: ((site6_opsman_admin.username))
       CLIENT_SECRET: ((site6_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 
 - name: gather-data-site5
@@ -174,7 +179,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((site5_opsman_url))
       CLIENT_ID: ((site5_opsman_admin.username))
       CLIENT_SECRET: ((site5_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 - name: put-it-all-together
   plan:

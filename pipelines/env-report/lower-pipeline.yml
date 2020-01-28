@@ -45,7 +45,8 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((FOG_opsman_url))
       CLIENT_ID: ((fog_opsman_admin.username))
       CLIENT_SECRET: ((fog_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
 
 - name: gather-data-site2
   plan:
@@ -69,4 +70,5 @@ jobs:
       OPSMAN_DOMAIN_OR_IP_ADDRESS: ((SBX_opsman_url))
       CLIENT_ID: ((SBX_opsman_admin.username))
       CLIENT_SECRET: ((SBX_opsman_admin.password))
-      MGMT_PASS: 3YR5KDNyetWK4Nrc
+      MGMT_USER: ((secrets.concourse.cf_mgmt_user))
+      MGMT_PASS: ((secrets.concourse.cf_mgmt_password))
